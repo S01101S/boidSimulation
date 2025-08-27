@@ -3,7 +3,11 @@
 #include <SFML/Graphics.hpp>
 #include <vector>
 
-
+struct Star
+{
+    sf::Vector2f position;
+    float radius;
+};
 
 class Boid
 {
@@ -84,7 +88,7 @@ public:
         }
     }
 
-    void flockRules(std::vector<Boid>& boids, sf::Vector2f mousePosition)
+    void flockRules(std::vector<Boid>& boids, sf::Vector2f mousePosition, bool blackHoleActive, sf::Vector2f blackHolePosition)
     {
         sf::Vector2f totalPosition = sf::Vector2f(0.f, 0.f);
         sf::Vector2f totalVelocity = sf::Vector2f(0.f, 0.f);
@@ -93,7 +97,27 @@ public:
         const float mouseDy = mousePosition.y - this->position.y;
         float mouseDistance = sqrt((mouseDx * mouseDx) + (mouseDy * mouseDy));
 
-        if (mouseDistance < 100.f)
+        const float blackHoleDx = blackHolePosition.x - this->position.x;
+        const float blackHoleDy = blackHolePosition.y - this->position.y;
+        float blackHoleDistance = sqrt((blackHoleDx * blackHoleDx) + (blackHoleDy * blackHoleDy));
+
+        if (blackHoleActive)
+        {
+            if (blackHoleDistance < 150.f)
+            {
+                sf::Vector2f attractForce = blackHolePosition - this->position;
+                float magnitudeOfAttractForce = sqrt((attractForce.x * attractForce.x) + (attractForce.y * attractForce.y));
+
+                if (magnitudeOfAttractForce > 0)
+                {
+                    sf::Vector2f normalisedAttractForce = attractForce / magnitudeOfAttractForce;
+                    normalisedAttractForce *= 2.f;
+                    this->acceleration += normalisedAttractForce;
+                }
+            }
+        }
+
+        if (mouseDistance < 100.f && blackHoleActive == false)
         {
             sf::Vector2f fleeDirection = this->position - mousePosition;
             float magnitudeOfFleeDirection = sqrt((fleeDirection.x * fleeDirection.x) + (fleeDirection.y * fleeDirection.y));
@@ -180,10 +204,11 @@ int main()
 
     sf::RenderWindow window(sf::VideoMode(windowWidth, windowHeight), "Boid Simulation");
     window.setFramerateLimit(60);
+    window.setVerticalSyncEnabled(true);
 
     std::vector<Boid> boidList;
 
-    for (int i=0; i<100; i++)
+    for (int i=0; i<50; i++)
     {
         const float boidXPosition = distributionX(generator);
         const float boidYPosition = distributionY(generator);
@@ -191,27 +216,97 @@ int main()
         boidList.push_back(newBoid);
     }
 
+    std::vector<sf::CircleShape> starField;
+    std::uniform_real_distribution<float> starDistributionX(0, windowWidth);
+    std::uniform_real_distribution<float> starDistributionY(0, windowHeight);
+    std::uniform_real_distribution<float> starRadius(1.f, 1.5f);
 
+    for (int i=0; i<200; i++)
+    {
+        sf::CircleShape newStar;
+
+        float starXPosition = starDistributionX(generator);
+        float starYPosition = starDistributionY(generator);
+        float radiusOfStar = starRadius(generator);
+
+        newStar.setPosition(starXPosition, starYPosition);
+        newStar.setRadius(radiusOfStar);
+
+        starField.push_back(newStar);
+    }
+
+
+    bool blackHoleActive = false;
+    sf::Vector2f blackHolePosition;
+
+    sf::CircleShape blackHoleEffect(30.f);
+    blackHoleEffect.setFillColor(sf::Color::Black);
+    blackHoleEffect.setOutlineColor(sf::Color(144, 199, 240));
+    blackHoleEffect.setOutlineThickness(2.f);
+    blackHoleEffect.setOrigin(30.f, 30.f);
+
+    sf::RectangleShape accretionDisk;
+    accretionDisk.setSize(sf::Vector2f(100.f, 3.f));
+    accretionDisk.setFillColor(sf::Color(42, 101, 145));
+    accretionDisk.setOrigin(50.f, 1.f);
+    float accretionDiskRotation = 0.f;
 
     while (window.isOpen())
     {
         sf::Event event;
+
+
         while (window.pollEvent(event))
         {
             if (event.type == sf::Event::Closed)
             {
                 window.close();
             }
+
+            if (event.type == sf::Event::MouseButtonPressed)
+            {
+                if (event.mouseButton.button == sf::Mouse::Left)
+                {
+                    blackHoleActive = true;
+                    blackHolePosition = sf::Vector2f(event.mouseButton.x, event.mouseButton.y);
+
+                }
+            }
+
+            if (event.type == sf::Event::MouseButtonReleased)
+            {
+                blackHoleActive = false;
+            }
+
         }
+
 
         sf::Vector2i pixelPosition = sf::Mouse::getPosition(window);
         sf::Vector2f mousePosition = window.mapPixelToCoords(pixelPosition);
 
-        window.clear(sf::Color::Black);
+        sf::RectangleShape fadeRect(sf::Vector2f(windowWidth, windowHeight));
+        fadeRect.setFillColor(sf::Color(0, 0, 0, 70));
+
+        window.draw(fadeRect);
+
+        if (blackHoleActive)
+        {
+            blackHoleEffect.setPosition(blackHolePosition);
+            accretionDisk.setPosition(blackHolePosition);
+            accretionDiskRotation += 0.5f;
+            accretionDisk.setRotation(accretionDiskRotation);
+            window.draw(blackHoleEffect);
+            window.draw(accretionDisk);
+        }
+
+        for (auto& star : starField)
+        {
+            window.draw(star);
+        }
 
         for (auto& currentBoid : boidList)
         {
-            currentBoid.flockRules(boidList, mousePosition);
+            currentBoid.flockRules(boidList, mousePosition, blackHoleActive, blackHolePosition);
             currentBoid.updateBoidPosition(windowWidth, windowHeight);
             window.draw(currentBoid.shape);
         }

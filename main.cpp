@@ -88,10 +88,34 @@ public:
         }
     }
 
-    void flockRules(std::vector<Boid>& boids, sf::Vector2f mousePosition, bool blackHoleActive, sf::Vector2f blackHolePosition, bool cohesionActive, bool separationActive, bool alignmentActive)
+    void flockRules(std::vector<Boid>& boids, sf::Vector2f mousePosition, bool blackHoleActive, sf::Vector2f blackHolePosition, bool cohesionActive, bool separationActive, bool alignmentActive, std::map<int, std::vector<Boid*>>& spatialGrid, float windowWidth, float cellSize)
     {
         sf::Vector2f totalPosition = sf::Vector2f(0.f, 0.f);
         sf::Vector2f totalVelocity = sf::Vector2f(0.f, 0.f);
+
+        int currentBoidRow = this->position.x / cellSize;
+        int currentBoidCol = this->position.y / cellSize;
+
+        std::vector<Boid*> localNeighbours;
+
+        for (int i=currentBoidRow-1; i<=currentBoidRow+1; i++)
+        {
+            for (int j=currentBoidCol-1; j<=currentBoidCol+1; j++)
+            {
+                int key = i * (windowWidth / cellSize) + j;
+
+                if (spatialGrid.count(key))
+                {
+                    std::vector<Boid*>& boidsInCell = spatialGrid.at(key);
+
+                    for (auto* neighbours : boidsInCell)
+                    {
+                        localNeighbours.push_back(neighbours);
+                    }
+                }
+            }
+
+        }
 
         const float mouseDx = mousePosition.x - this->position.x;
         const float mouseDy = mousePosition.y - this->position.y;
@@ -131,72 +155,77 @@ public:
         }
         else
         {
-            for (auto& boid : boids)
+            if (!localNeighbours.empty())
             {
-                totalPosition += boid.position;
-            }
-
-            if (cohesionActive)
-            {
-                sf::Vector2f centerOfFlock = totalPosition / static_cast<float>(boids.size());
-                sf::Vector2f steeringDirection = centerOfFlock - position;
-                float magnitudeOfSteeringDirection = sqrt(steeringDirection.x*steeringDirection.x + steeringDirection.y*steeringDirection.y);
-
-                if (magnitudeOfSteeringDirection > 0)
+                for (auto& boid : localNeighbours)
                 {
-                    sf::Vector2f normalisedSteeringDirectionForce = steeringDirection / magnitudeOfSteeringDirection;
-                    normalisedSteeringDirectionForce *= 0.05f;
-                    acceleration += normalisedSteeringDirectionForce;
-                }
-            }
-
-            for (auto& neighbourBoid : boids)
-            {
-                if (this == &neighbourBoid)
-                {
-                    continue;
+                    totalPosition += boid->position;
                 }
 
-                if (separationActive)
+                if (cohesionActive)
                 {
-                    float dx = (this->position.x - neighbourBoid.position.x);
-                    float dy = (this->position.y - neighbourBoid.position.y);
-                    float distance = sqrt((dx * dx) + (dy * dy));
+                    sf::Vector2f centerOfFlock = totalPosition / static_cast<float>(localNeighbours.size());
+                    sf::Vector2f steeringDirection = centerOfFlock - position;
+                    float magnitudeOfSteeringDirection = sqrt(steeringDirection.x*steeringDirection.x + steeringDirection.y*steeringDirection.y);
 
-                    if (distance < 25.f)
+                    if (magnitudeOfSteeringDirection > 0)
                     {
-                        sf::Vector2f steerAwayDirection = this->position - neighbourBoid.position;
-                        float magnitudeOfSteerAwayDirection = sqrt(steerAwayDirection.x * steerAwayDirection.x + steerAwayDirection.y * steerAwayDirection.y);
-
-                        if (magnitudeOfSteerAwayDirection > 0)
-                        {
-                            sf::Vector2f normalisedSteerAwayDirection = steerAwayDirection / magnitudeOfSteerAwayDirection;
-                            normalisedSteerAwayDirection *= 0.05f;
-                            this->acceleration += normalisedSteerAwayDirection;
-                        }
+                        sf::Vector2f normalisedSteeringDirectionForce = steeringDirection / magnitudeOfSteeringDirection;
+                        normalisedSteeringDirectionForce *= 0.05f;
+                        acceleration += normalisedSteeringDirectionForce;
                     }
                 }
 
-            }
-
-            for (auto& boid : boids)
-            {
-                totalVelocity += boid.velocity;
-            }
-
-            if (alignmentActive)
-            {
-                sf::Vector2f averageVelocity = totalVelocity / static_cast<float>(boids.size());
-                sf::Vector2f velocitySteering = averageVelocity - this->velocity;
-                float magnitudeOfVelocitySteering = sqrt(velocitySteering.x * velocitySteering.x + velocitySteering.y * velocitySteering.y);
-                if (magnitudeOfVelocitySteering > 0)
+                for (auto& neighbourBoid : localNeighbours)
                 {
-                    sf::Vector2f normalisedVelocitySteering = velocitySteering / magnitudeOfVelocitySteering;
-                    normalisedVelocitySteering *= 0.05f;
-                    this->acceleration += normalisedVelocitySteering;
+                    if (this == neighbourBoid)
+                    {
+                        continue;
+                    }
+
+                    if (separationActive)
+                    {
+                        float dx = (this->position.x - neighbourBoid->position.x);
+                        float dy = (this->position.y - neighbourBoid->position.y);
+                        float distance = sqrt((dx * dx) + (dy * dy));
+
+                        if (distance < 25.f)
+                        {
+                            sf::Vector2f steerAwayDirection = this->position - neighbourBoid->position;
+                            float magnitudeOfSteerAwayDirection = sqrt(steerAwayDirection.x * steerAwayDirection.x + steerAwayDirection.y * steerAwayDirection.y);
+
+                            if (magnitudeOfSteerAwayDirection > 0)
+                            {
+                                sf::Vector2f normalisedSteerAwayDirection = steerAwayDirection / magnitudeOfSteerAwayDirection;
+                                normalisedSteerAwayDirection *= 0.05f;
+                                this->acceleration += normalisedSteerAwayDirection;
+                            }
+                        }
+                    }
+
+                }
+
+
+                for (auto& boid : localNeighbours)
+                {
+                    totalVelocity += boid->velocity;
+                }
+
+                if (alignmentActive)
+                {
+                    sf::Vector2f averageVelocity = totalVelocity / static_cast<float>(localNeighbours.size());
+                    sf::Vector2f velocitySteering = averageVelocity - this->velocity;
+                    float magnitudeOfVelocitySteering = sqrt(velocitySteering.x * velocitySteering.x + velocitySteering.y * velocitySteering.y);
+                    if (magnitudeOfVelocitySteering > 0)
+                    {
+                        sf::Vector2f normalisedVelocitySteering = velocitySteering / magnitudeOfVelocitySteering;
+                        normalisedVelocitySteering *= 0.05f;
+                        this->acceleration += normalisedVelocitySteering;
+                    }
                 }
             }
         }
+
 
         const float accelerationMagnitude = sqrt((this->acceleration.x * this->acceleration.x) + (this->acceleration.y * this->acceleration.y));
 
@@ -389,11 +418,13 @@ int main()
 {
     const float windowHeight = 600.f;
     const float windowWidth = 800.f;
+    const float cellSize = 75.f;
     int boidCount = 50;
     bool cohesionActive = true;
     bool separationActive = true;
     bool alignmentActive = true;
     UserInterface boidUI;
+    std::map<int, std::vector<Boid*>> spatialGrid;
     sf::RenderTexture renderTexture;
     renderTexture.create(windowWidth, windowHeight);
 
@@ -457,6 +488,7 @@ int main()
     while (window.isOpen())
     {
         sf::Event event;
+        spatialGrid.clear();
 
         while (window.pollEvent(event))
         {
@@ -507,9 +539,20 @@ int main()
         sf::Vector2i pixelPosition = sf::Mouse::getPosition(window);
         sf::Vector2f mousePosition = window.mapPixelToCoords(pixelPosition);
 
+
         for (auto& currentBoid : boidList)
         {
-            currentBoid.flockRules(boidList, mousePosition, blackHoleActive, blackHolePosition, cohesionActive, separationActive, alignmentActive);
+            int boidRow = currentBoid.position.x / cellSize;
+            int boidCol = currentBoid.position.y / cellSize;
+
+            int boidKey = boidRow * (windowWidth / cellSize) + boidCol;
+            spatialGrid[boidKey].push_back(&currentBoid);
+        }
+
+
+        for (auto& currentBoid : boidList)
+        {
+            currentBoid.flockRules(boidList, mousePosition, blackHoleActive, blackHolePosition, cohesionActive, separationActive, alignmentActive, spatialGrid, windowWidth, cellSize);
             currentBoid.updateBoidPosition(windowWidth, windowHeight);
         }
 
